@@ -28,11 +28,13 @@
                 </Grid.RowDefinitions>
 
                 <Label Content="Robot IP:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center"/>
-                <TextBox Text="{Binding RobotAddress}" Grid.Row="0" Grid.Column="1" Margin="5,0"/>
+                <TextBox Text="{Binding RobotIp}" Grid.Row="0" Grid.Column="1" Margin="5,0"/>
                 <Button Content="Connect" Grid.Row="0" Grid.Column="2" Command="{Binding ConnectCommand}" Margin="5,0"/>
 
                 <Label Content="Status:" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center"/>
                 <TextBlock Text="{Binding ConnectionStatus}" Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Margin="5,0"/>
+                <Button Content="Disconnect" Grid.Row="1" Grid.Column="2" Command="{Binding DisconnectCommand}" Margin="5,0"/>
+
             </Grid>
         </GroupBox>
 
