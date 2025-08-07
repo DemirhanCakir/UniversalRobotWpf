@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:universalrobotwpf="clr-namespace:UniversalRobotWpf"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        Title="Universal Robots Test" Height="450" Width="600">
+        Title="Universal Robots Test" Height="450" Width="800">
     <Window.DataContext>
         <universalrobotwpf:MainViewModel/>
     </Window.DataContext>
@@ -60,11 +60,76 @@
             </Grid>
         </GroupBox>
 
-        <!-- Log Section -->
-        <GroupBox Header="Log" Grid.Row="2">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <TextBlock Text="{Binding LogMessages}" TextWrapping="Wrap" FontFamily="Consolas"/>
-            </ScrollViewer>
-        </GroupBox>
+        <!-- Log and Controls Section -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Log Section -->
+            <GroupBox Header="Log" Grid.Column="0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <TextBlock Text="{Binding LogMessages}" TextWrapping="Wrap" FontFamily="Consolas"/>
+                </ScrollViewer>
+            </GroupBox>
+
+            <!-- Checkbox Sections -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="10,0,0,0">
+                <!-- Config Output Section -->
+                <GroupBox Header="Config Output">
+                    <Border BorderBrush="Gray" BorderThickness="1" Padding="5">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <CheckBox Content="0" IsChecked="{Binding ConfigOut0, Mode=TwoWay}" Grid.Row="0" Grid.Column="0" Margin="5"/>
+                            <CheckBox Content="4" IsChecked="{Binding ConfigOut4, Mode=TwoWay}" Grid.Row="0" Grid.Column="1" Margin="5"/>
+                            <CheckBox Content="1" IsChecked="{Binding ConfigOut1, Mode=TwoWay}" Grid.Row="1" Grid.Column="0" Margin="5"/>
+                            <CheckBox Content="5" IsChecked="{Binding ConfigOut5, Mode=TwoWay}" Grid.Row="1" Grid.Column="1" Margin="5"/>
+                            <CheckBox Content="2" IsChecked="{Binding ConfigOut2, Mode=TwoWay}" Grid.Row="2" Grid.Column="0" Margin="5"/>
+                            <CheckBox Content="6" IsChecked="{Binding ConfigOut6, Mode=TwoWay}" Grid.Row="2" Grid.Column="1" Margin="5"/>
+                            <CheckBox Content="3" IsChecked="{Binding ConfigOut3, Mode=TwoWay}" Grid.Row="3" Grid.Column="0" Margin="5"/>
+                            <CheckBox Content="7" IsChecked="{Binding ConfigOut7,  Mode=TwoWay}" Grid.Row="3" Grid.Column="1" Margin="5"/>
+                        </Grid>
+                    </Border>
+                </GroupBox>
+
+                <!-- Digital Output Section -->
+                <GroupBox Header="Digital Output" Margin="10,0,0,0">
+                    <Border BorderBrush="Gray" BorderThickness="1" Padding="5">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <CheckBox Content="0" IsChecked="{Binding DigitalOut0, Mode=TwoWay}" Grid.Row="0" Grid.Column="0" Margin="5"/>
+                            <CheckBox Content="4" IsChecked="{Binding DigitalOut4, Mode=TwoWay}" Grid.Row="0" Grid.Column="1" Margin="5"/>
+                            <CheckBox Content="1" IsChecked="{Binding DigitalOut1, Mode=TwoWay}" Grid.Row="1" Grid.Column="0" Margin="5"/>
+                            <CheckBox Content="5" IsChecked="{Binding DigitalOut5, Mode=TwoWay}" Grid.Row="1" Grid.Column="1" Margin="5"/>
+                            <CheckBox Content="2" IsChecked="{Binding DigitalOut2, Mode=TwoWay}" Grid.Row="2" Grid.Column="0" Margin="5"/>
+                            <CheckBox Content="6" IsChecked="{Binding DigitalOut6, Mode=TwoWay}" Grid.Row="2" Grid.Column="1" Margin="5"/>
+                            <CheckBox Content="3" IsChecked="{Binding DigitalOut3, Mode=TwoWay}" Grid.Row="3" Grid.Column="0" Margin="5"/>
+                            <CheckBox Content="7" IsChecked="{Binding DigitalOut7, Mode=TwoWay}" Grid.Row="3" Grid.Column="1" Margin="5"/>
+                        </Grid>
+                    </Border>
+                </GroupBox>
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>

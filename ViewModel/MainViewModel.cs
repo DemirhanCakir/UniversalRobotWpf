@@ -1,30 +1,46 @@
 ﻿using System;
-using System.ComponentModel;
-using System.Net.Sockets;
-using System.IO;
-using System.Text;
-using System.Runtime.CompilerServices;
-using System.Threading.Tasks;
-using System.Windows.Input;
-using System.Windows.Threading;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.IO;
 using System.Linq;
+using System.Net.Sockets;
+using System.Runtime.CompilerServices;
+using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
-
+using System.Windows.Input;
 
 namespace UniversalRobotWpf
 {
     public class MainViewModel : BaseViewModel
     {
-        private string _robotIp = "192.168.56.101";
-        private string _connectionStatus = "Disconnected";
-        private string _poseData = "No data";
-        private string _jointData = "No data";
-        private string _logMessages = "";
-        private bool _isConnected = false;
+        // --- Private fields for state ---
         private URRClient _client;
         private CancellationTokenSource _cancellationTokenSource;
+        private bool _isConnected = false;
+
+        // --- Properties for UI Binding (Connection Info) ---
+        private string _robotIp = "192.168.56.101";
+        public string RobotIp { get => _robotIp; set => SetProperty(ref _robotIp, value); }
+
+        private string _connectionStatus = "Disconnected";
+        public string ConnectionStatus { get => _connectionStatus; set { SetProperty(ref _connectionStatus, value); IsConnected = (value == "Connected"); } }
+
+        public bool IsConnected { get => _isConnected; set { if (SetProperty(ref _isConnected, value)) { ((RelayCommand)ConnectCommand).RaiseCanExecuteChanged(); ((RelayCommand)DisconnectCommand).RaiseCanExecuteChanged(); } } }
+
+        private string _poseData = "No data";
+        public string PoseData { get => _poseData; set => SetProperty(ref _poseData, value); }
+
+        private string _jointData = "No data";
+        public string JointData { get => _jointData; set => SetProperty(ref _jointData, value); }
+
+        private string _logMessages = "";
+        public string LogMessages { get => _logMessages; set => SetProperty(ref _logMessages, value); }
+
+        // --- Commands ---
+        public ICommand ConnectCommand { get; }
+        public ICommand DisconnectCommand { get; }
 
         public MainViewModel()
         {
@@ -32,58 +48,34 @@ namespace UniversalRobotWpf
             DisconnectCommand = new RelayCommand(DisconnectFromRobot, () => IsConnected);
         }
 
-        public string RobotIp
-        {
-            get => _robotIp;
-            set => SetProperty(ref _robotIp, value);
-        }
+        #region Digital Output Properties
+        // Note: Setters now only update the property. The loop handles sending the data.
+        private bool _digitalOut0; public bool DigitalOut0 { get => _digitalOut0; set => SetProperty(ref _digitalOut0, value); }
+        private bool _digitalOut1; public bool DigitalOut1 { get => _digitalOut1; set => SetProperty(ref _digitalOut1, value); }
+        private bool _digitalOut2; public bool DigitalOut2 { get => _digitalOut2; set => SetProperty(ref _digitalOut2, value); }
+        private bool _digitalOut3; public bool DigitalOut3 { get => _digitalOut3; set => SetProperty(ref _digitalOut3, value); }
+        private bool _digitalOut4; public bool DigitalOut4 { get => _digitalOut4; set => SetProperty(ref _digitalOut4, value); }
+        private bool _digitalOut5; public bool DigitalOut5 { get => _digitalOut5; set => SetProperty(ref _digitalOut5, value); }
+        private bool _digitalOut6; public bool DigitalOut6 { get => _digitalOut6; set => SetProperty(ref _digitalOut6, value); }
+        private bool _digitalOut7; public bool DigitalOut7 { get => _digitalOut7; set => SetProperty(ref _digitalOut7, value); }
 
-        public string ConnectionStatus
-        {
-            get => _connectionStatus;
-            set
-            {
-                if (SetProperty(ref _connectionStatus, value))
-                {
-                    // Update IsConnected based on status
-                    IsConnected = (value == "Connected");
-                }
-            }
-        }
+        private bool _configOut0; public bool ConfigOut0 { get => _configOut0; set => SetProperty(ref _configOut0, value); }
+        private bool _configOut1; public bool ConfigOut1 { get => _configOut1; set => SetProperty(ref _configOut1, value); }
+        private bool _configOut2; public bool ConfigOut2 { get => _configOut2; set => SetProperty(ref _configOut2, value); }
+        private bool _configOut3; public bool ConfigOut3 { get => _configOut3; set => SetProperty(ref _configOut3, value); }
+        private bool _configOut4; public bool ConfigOut4 { get => _configOut4; set => SetProperty(ref _configOut4, value); }
+        private bool _configOut5; public bool ConfigOut5 { get => _configOut5; set => SetProperty(ref _configOut5, value); }
+        private bool _configOut6; public bool ConfigOut6 { get => _configOut6; set => SetProperty(ref _configOut6, value); }
+        private bool _configOut7; public bool ConfigOut7 { get => _configOut7; set => SetProperty(ref _configOut7, value); }
+        #endregion
 
-        public bool IsConnected
+        private async Task UpdateAllDigitalOuts()
         {
-            get => _isConnected;
-            set
-            {
-                if (SetProperty(ref _isConnected, value))
-                {
-                    // Notify command state changes
-                    ConnectCommand.RaiseCanExecuteChanged();
-                    DisconnectCommand.RaiseCanExecuteChanged();
-                }
-            }
+            if (!_isConnected || _client == null) return;
+            var standardStates = new[] { DigitalOut0, DigitalOut1, DigitalOut2, DigitalOut3, DigitalOut4, DigitalOut5, DigitalOut6, DigitalOut7 };
+            var toolStates = new[] { ConfigOut0, ConfigOut1, ConfigOut2, ConfigOut3, ConfigOut4, ConfigOut5, ConfigOut6, ConfigOut7 };
+            await _client.SendAllDigitalOutputStatesAsync(standardStates, toolStates);
         }
-
-        public string PoseData
-        {
-            get => _poseData;
-            set => SetProperty(ref _poseData, value);
-        }
-
-        public string JointData
-        {
-            get => _jointData;
-            set => SetProperty(ref _jointData, value);
-        }
-
-        public string LogMessages
-        {
-            get => _logMessages;
-            set => SetProperty(ref _logMessages, value);
-        }
-        public RelayCommand DisconnectCommand { get; }
-        public RelayCommand ConnectCommand { get; }
 
         private async void ConnectToRobot()
         {
@@ -92,30 +84,31 @@ namespace UniversalRobotWpf
 
             try
             {
-                // --- STEP 1: SETUP (on UI thread) ---
                 ConnectionStatus = "Connecting...";
                 await _client.ConnectAsync();
 
-                if (!await _client.NegotiateProtocolVersionAsync())
-                {
-                    throw new Exception("Failed to negotiate protocol version.");
-                }
+                if (!await _client.NegotiateProtocolVersionAsync()) throw new Exception("Failed to negotiate protocol version.");
 
-                var variables = new[] { "actual_TCP_pose", "actual_q" };
-                await _client.SendOutputSetupAsync(variables);
-
+                // Setup outputs (for reading data FROM robot)
+                var outputVars = new[] { "actual_TCP_pose", "actual_q" };
+                await _client.SendOutputSetupAsync(outputVars);
                 var setupResponse = await _client.ReceivePackageAsync();
-                if (setupResponse == null || !RTDEDataParser.ParseOutputSetupResponse(setupResponse))
+                if (setupResponse == null || !RTDEDataParser.ParseOutputSetupResponse(setupResponse)) throw new Exception("Failed to setup RTDE output recipe.");
+
+                // Setup ONE combined input recipe for all 16 outputs
+                var inputVars = new[]
                 {
-                    throw new Exception("Failed to setup RTDE output recipe.");
-                }
+                    "standard_digital_output_mask", "standard_digital_output",
+                    "configurable_digital_output_mask", "configurable_digital_output"
+                };
+                await _client.SetupInputRecipeAsync(inputVars);
 
                 await _client.SendStartAsync();
                 ConnectionStatus = "Connected";
-                AddLogMessage("Connection successful. Starting data stream...");
+                AddLogMessage("Connection successful. Starting data exchange...");
 
-                // --- STEP 2: START BACKGROUND DATA RECEIVER ---
-                Task.Run(() => DataReceiverLoop(variables, _cancellationTokenSource.Token));
+                // Start the loop that handles both receiving data and sending the I/O heartbeat
+                Task.Run(() => DataExchangeLoop(outputVars, _cancellationTokenSource.Token));
             }
             catch (Exception ex)
             {
@@ -124,112 +117,93 @@ namespace UniversalRobotWpf
                 _client?.Disconnect();
             }
         }
+
         private void DisconnectFromRobot()
         {
             _cancellationTokenSource?.Cancel();
-            _client?.Disconnect();
-            ConnectionStatus = "Disconnected";
-            AddLogMessage("Disconnected from robot.");
+            // The loop will handle calling _client.Disconnect()
         }
 
-        private async void DataReceiverLoop(string[] variables, CancellationToken token)
+        private async void DataExchangeLoop(string[] variables, CancellationToken token)
         {
+            var lastHeartbeat = DateTime.MinValue;
+            var heartbeatInterval = TimeSpan.FromMilliseconds(500); // Send I/O state every 500ms
+
             while (!token.IsCancellationRequested)
             {
                 try
                 {
+                    // Heartbeat logic to keep the connection alive
+                    if (DateTime.UtcNow - lastHeartbeat > heartbeatInterval)
+                    {
+                        await UpdateAllDigitalOuts();
+                        lastHeartbeat = DateTime.UtcNow;
+                    }
+
                     var dataPackage = await _client.ReceivePackageAsync();
-                    if (dataPackage == null || token.IsCancellationRequested)
-                    {
-                        AddLogMessage("Connection lost.");
-                        break;
-                    }
+                    if (dataPackage == null) { AddLogMessage("Connection lost."); break; }
 
-                    if (dataPackage[0] == (byte)'U')
+                    switch (dataPackage[0])
                     {
-                        var parsedData = RTDEDataParser.ParseDataPackage(dataPackage, variables);
-                        if (parsedData != null)
-                        {
-                            // Use Dispatcher to update UI from background thread
-                            Application.Current.Dispatcher.Invoke(() =>
+                        case (byte)'U': // Data Package
+                            var parsedData = RTDEDataParser.ParseDataPackage(dataPackage, variables);
+                            if (parsedData != null)
                             {
-                                if (parsedData.ContainsKey("actual_TCP_pose"))
+                                Application.Current.Dispatcher.Invoke(() =>
                                 {
-                                    var pose = parsedData["actual_TCP_pose"];
-                                    PoseData = $"Pose: X={pose[0]:F3}, Y={pose[1]:F3}, Z={pose[2]:F3}, Rx={pose[3]:F3}, Ry={pose[4]:F3}, Rz={pose[5]:F3}";
-                                }
+                                    if (parsedData.TryGetValue("actual_TCP_pose", out var pose))
+                                        PoseData = $"X:{pose[0]:F3}, Y:{pose[1]:F3}, Z:{pose[2]:F3}, Rx:{pose[3]:F3}, Ry:{pose[4]:F3}, Rz:{pose[5]:F3}";
+                                    if (parsedData.TryGetValue("actual_q", out var joints))
+                                    {
+                                        var jointsDeg = joints.Select(rad => rad * 180.0 / Math.PI).ToArray();
+                                        JointData = $"J1:{jointsDeg[0]:F2}°, J2:{jointsDeg[1]:F2}°, J3:{jointsDeg[2]:F2}°, J4:{jointsDeg[3]:F2}°, J5:{jointsDeg[4]:F2}°, J6:{jointsDeg[5]:F2}°";
+                                    }
+                                });
+                            }
+                            break;
 
-                                if (parsedData.ContainsKey("actual_q"))
-                                {
-                                    var joints = parsedData["actual_q"];
-                                    var jointsDeg = joints.Select(rad => rad * 180.0 / Math.PI).ToArray();
-                                    JointData = $"Joints (deg): J1={jointsDeg[0]:F2}, J2={jointsDeg[1]:F2}, J3={jointsDeg[2]:F2}, J4={jointsDeg[3]:F2}, J5={jointsDeg[4]:F2}, J6={jointsDeg[5]:F2}";
-                                }
-                            });
-                        }
-                    }
-                    else if (dataPackage[0] == (byte)'S')
-                    {
-                        AddLogMessage("Received Start confirmation. Waiting for data...");
-                    }
-                    else
-                    {
-                        AddLogMessage($"Received non-data package of type: {(char)dataPackage[0]} and length {dataPackage.Length}");
+                        case (byte)'M': // Text Message from Robot
+                            AddLogMessage($"Robot Message: {RTDEDataParser.ParseTextMessage(dataPackage)}");
+                            break;
+
+                        case (byte)'S': // Start Confirmation
+                            AddLogMessage("Start confirmation received.");
+                            break;
                     }
                 }
-                catch (Exception ex)
-                {
-                    AddLogMessage($"Error in data loop: {ex.Message}");
-                    break;
-                }
+                catch (IOException ex) { AddLogMessage($"Connection closed: {ex.Message}"); break; }
+                catch (Exception ex) { AddLogMessage($"Error in data loop: {ex.Message}"); break; }
             }
-            // Cleanup after loop finishes
+
             _client.Disconnect();
-            Application.Current.Dispatcher.Invoke(() => {
-                ConnectionStatus = "Disconnected";
-            });
+            Application.Current.Dispatcher.Invoke(() => { ConnectionStatus = "Disconnected"; });
         }
 
         private void AddLogMessage(string message)
         {
-            // Use dispatcher to ensure thread safety when updating logs
-            Application.Current.Dispatcher.Invoke(() =>
-            {
-                LogMessages += $"[{DateTime.Now:HH:mm:ss}] {message}\n";
-            });
+            Application.Current.Dispatcher.Invoke(() => { LogMessages += $"[{DateTime.Now:HH:mm:ss}] {message}\n"; });
         }
     }
-    #region URRClient
     public class URRClient
     {
         private readonly string _robotIp;
         private readonly int _robotPort = 30004;
         private TcpClient _tcpClient;
         private NetworkStream _stream;
+        private byte _digitalOutRecipeId; // A single ID for our combined input recipe
 
         private enum RtdEPackageType : byte
         {
-            RTDE_REQUEST_PROTOCOL_VERSION = 86, // 'V'
-            RTDE_GET_URCONTROL_VERSION = 118, // 'v'
-            RTDE_TEXT_MESSAGE = 77, // 'M'
-            RTDE_DATA_PACKAGE = 85, // 'U'
-            RTDE_CONTROL_PACKAGE_SETUP_OUTPUTS = 79, // 'O'
-            RTDE_CONTROL_PACKAGE_SETUP_INPUTS = 73, // 'I'
-            RTDE_CONTROL_PACKAGE_START = 83, // 'S'
-            RTDE_CONTROL_PACKAGE_PAUSE = 80  // 'P'
+            RTDE_REQUEST_PROTOCOL_VERSION = 86, RTDE_GET_URCONTROL_VERSION = 118,
+            RTDE_TEXT_MESSAGE = 77, RTDE_DATA_PACKAGE = 85,
+            RTDE_CONTROL_PACKAGE_SETUP_OUTPUTS = 79, RTDE_CONTROL_PACKAGE_SETUP_INPUTS = 73,
+            RTDE_CONTROL_PACKAGE_START = 83, RTDE_CONTROL_PACKAGE_PAUSE = 80
         }
 
-        public URRClient(string ip)
-        {
-            _robotIp = ip;
-        }
+        public URRClient(string ip) { _robotIp = ip; }
 
         public async Task ConnectAsync()
         {
-            if (_tcpClient?.Connected == true)
-            {
-                Disconnect();
-            }
             _tcpClient = new TcpClient();
             await _tcpClient.ConnectAsync(_robotIp, _robotPort);
             _stream = _tcpClient.GetStream();
@@ -245,34 +219,26 @@ namespace UniversalRobotWpf
 
         public async Task<bool> NegotiateProtocolVersionAsync()
         {
-            // Request to use protocol version 2
             ushort protocolVersion = 2;
-
-            byte[] sizeBytes = BitConverter.GetBytes((ushort)5); // size (2) + type (1) + payload (2)
+            byte[] sizeBytes = BitConverter.GetBytes((ushort)5);
             if (BitConverter.IsLittleEndian) Array.Reverse(sizeBytes);
-
             byte[] versionBytes = BitConverter.GetBytes(protocolVersion);
             if (BitConverter.IsLittleEndian) Array.Reverse(versionBytes);
 
-            using (var ms = new MemoryStream())
-            {
-                ms.Write(sizeBytes, 0, sizeBytes.Length);
-                ms.WriteByte((byte)RtdEPackageType.RTDE_REQUEST_PROTOCOL_VERSION);
-                ms.Write(versionBytes, 0, versionBytes.Length);
-                await _stream.WriteAsync(ms.ToArray(), 0, (int)ms.Length);
-            }
+            var package = new byte[5];
+            sizeBytes.CopyTo(package, 0);
+            package[2] = (byte)RtdEPackageType.RTDE_REQUEST_PROTOCOL_VERSION;
+            versionBytes.CopyTo(package, 3);
+
+            await _stream.WriteAsync(package, 0, package.Length);
             Console.WriteLine("Sent protocol version request.");
 
-            // Receive response
             var response = await ReceivePackageAsync();
-            // response[0] should be the type 'V'
-            // response[1] should be the result (1 for success)
             if (response != null && response[0] == (byte)RtdEPackageType.RTDE_REQUEST_PROTOCOL_VERSION && response[1] == 1)
             {
                 Console.WriteLine("Protocol version 2 accepted by controller.");
                 return true;
             }
-
             Console.WriteLine("Failed to negotiate protocol version.");
             return false;
         }
@@ -281,69 +247,107 @@ namespace UniversalRobotWpf
         {
             string payloadStr = string.Join(",", variables);
             byte[] payload = Encoding.UTF8.GetBytes(payloadStr);
-
             byte[] frequencyBytes = BitConverter.GetBytes(frequency);
             if (BitConverter.IsLittleEndian) Array.Reverse(frequencyBytes);
-
             ushort size = (ushort)(3 + 8 + payload.Length);
-
             byte[] sizeBytes = BitConverter.GetBytes(size);
             if (BitConverter.IsLittleEndian) Array.Reverse(sizeBytes);
 
             using (var ms = new MemoryStream())
             {
-                ms.Write(sizeBytes, 0, sizeBytes.Length);
+                ms.Write(sizeBytes, 0, 2);
                 ms.WriteByte((byte)RtdEPackageType.RTDE_CONTROL_PACKAGE_SETUP_OUTPUTS);
-                ms.Write(frequencyBytes, 0, frequencyBytes.Length);
+                ms.Write(frequencyBytes, 0, 8);
                 ms.Write(payload, 0, payload.Length);
                 await _stream.WriteAsync(ms.ToArray(), 0, (int)ms.Length);
-                Console.WriteLine($"Sent output setup request for: {payloadStr}");
             }
+            Console.WriteLine($"Sent output setup request for: {payloadStr}");
         }
 
-        public async Task SendStartAsync()
+        public async Task SetupInputRecipeAsync(string[] variables)
         {
-            byte[] sizeBytes = BitConverter.GetBytes((ushort)3);
+            string payloadStr = string.Join(",", variables);
+            byte[] payload = Encoding.UTF8.GetBytes(payloadStr);
+            ushort size = (ushort)(3 + payload.Length);
+            byte[] sizeBytes = BitConverter.GetBytes(size);
             if (BitConverter.IsLittleEndian) Array.Reverse(sizeBytes);
 
             using (var ms = new MemoryStream())
             {
-                ms.Write(sizeBytes, 0, sizeBytes.Length);
-                ms.WriteByte((byte)RtdEPackageType.RTDE_CONTROL_PACKAGE_START);
+                ms.Write(sizeBytes, 0, 2);
+                ms.WriteByte((byte)RtdEPackageType.RTDE_CONTROL_PACKAGE_SETUP_INPUTS);
+                ms.Write(payload, 0, payload.Length);
                 await _stream.WriteAsync(ms.ToArray(), 0, (int)ms.Length);
             }
+            Console.WriteLine($"Sent combined input setup request for: {payloadStr}");
+
+            var response = await ReceivePackageAsync();
+            _digitalOutRecipeId = RTDEDataParser.ParseInputSetupResponse(response);
+            Console.WriteLine($"Stored Combined Digital Output Recipe ID: {_digitalOutRecipeId}");
+        }
+
+        public async Task SendAllDigitalOutputStatesAsync(bool[] standardStates, bool[] toolStates)
+        {
+            if (_digitalOutRecipeId == 0) return; // Recipe not set up yet
+
+            byte standardMask = 0, standardValue = 0, toolMask = 0, toolValue = 0;
+            for (int i = 0; i < 8; i++)
+            {
+                standardMask |= (byte)(1 << i);
+                if (standardStates[i]) standardValue |= (byte)(1 << i);
+                toolMask |= (byte)(1 << i);
+                if (toolStates[i]) toolValue |= (byte)(1 << i);
+            }
+
+            byte[] package = new byte[8];
+            byte[] sizeBytes = BitConverter.GetBytes((ushort)package.Length);
+            if (BitConverter.IsLittleEndian) Array.Reverse(sizeBytes);
+            sizeBytes.CopyTo(package, 0);
+            package[2] = (byte)RtdEPackageType.RTDE_DATA_PACKAGE;
+            package[3] = _digitalOutRecipeId;
+            package[4] = standardMask;
+            package[5] = standardValue;
+            package[6] = toolMask;
+            package[7] = toolValue; // This was an error in my previous code, should be 7 bytes total. Correcting.
+                                    // The package is 7 bytes: Size(2), Type(1), RecipeID(1), Mask1(1), Val1(1), Mask2(1), Val2(1)
+                                    // Ah, wait. The recipe is 4 bytes long.
+                                    // Recipe: std_mask (u8), std_val (u8), tool_mask (u8), tool_val (u8)
+                                    // Package: Size(2), Type(1), RecipeID(1), Payload(4) = 8 bytes. My mistake. Let me fix.
+
+            // Correct package size is 8 bytes.
+            package = new byte[8];
+            sizeBytes = BitConverter.GetBytes((ushort)package.Length);
+            if (BitConverter.IsLittleEndian) Array.Reverse(sizeBytes);
+            sizeBytes.CopyTo(package, 0); // Size
+            package[2] = (byte)RtdEPackageType.RTDE_DATA_PACKAGE; // Type 'U'
+            package[3] = _digitalOutRecipeId; // Recipe ID
+            package[4] = standardMask;
+            package[5] = standardValue;
+            package[6] = toolMask;
+            package[7] = toolValue;
+
+            await _stream.WriteAsync(package, 0, package.Length);
+        }
+
+        public async Task SendStartAsync()
+        {
+            byte[] package = new byte[3] { 0, 3, (byte)RtdEPackageType.RTDE_CONTROL_PACKAGE_START };
+            await _stream.WriteAsync(package, 0, package.Length);
             Console.WriteLine("Sent start command.");
         }
 
         public async Task<byte[]> ReceivePackageAsync()
         {
             byte[] sizeBuffer = new byte[2];
-            int bytesRead = await _stream.ReadAsync(sizeBuffer, 0, 2);
-            if (bytesRead < 2) return null;
+            await _stream.ReadAsync(sizeBuffer, 0, 2);
             if (BitConverter.IsLittleEndian) Array.Reverse(sizeBuffer);
             ushort packageSize = BitConverter.ToUInt16(sizeBuffer, 0);
 
-            // The full package includes the size header, so we read packageSize - 2 bytes for the payload
             byte[] payloadBuffer = new byte[packageSize - 2];
-            int totalRead = 0;
-            while (totalRead < payloadBuffer.Length)
-            {
-                bytesRead = await _stream.ReadAsync(payloadBuffer, totalRead, payloadBuffer.Length - totalRead);
-                if (bytesRead == 0) return null;
-                totalRead += bytesRead;
-            }
-
-            // Reconstruct the full package for context (type is the first byte of payload)
-            byte[] fullPackage = new byte[packageSize];
-            Array.Copy(sizeBuffer, 0, fullPackage, 0, 2);
-            Array.Copy(payloadBuffer, 0, fullPackage, 2, payloadBuffer.Length);
-
-            // We return just the payload (type + data) as before, for consistency
+            await _stream.ReadAsync(payloadBuffer, 0, payloadBuffer.Length);
             return payloadBuffer;
         }
     }
-    #endregion
-    #region RTDEDataParser
     public static class RTDEDataParser
     {
         public static bool ParseOutputSetupResponse(byte[] package)
@@ -353,41 +357,48 @@ namespace UniversalRobotWpf
                 Console.WriteLine("Error: Did not receive expected output setup confirmation.");
                 return false;
             }
-            string dataTypesStr = System.Text.Encoding.UTF8.GetString(package, 2, package.Length - 2);
-            Console.WriteLine($"Received output setup confirmation. Recipe ID: {package[1]}. Data types: {dataTypesStr}");
-
+            string dataTypesStr = Encoding.UTF8.GetString(package, 2, package.Length - 2);
             if (dataTypesStr.Contains("NOT_FOUND"))
             {
-                Console.WriteLine("Error: One or more variables were not found by the controller.");
+                Console.WriteLine("Error: One or more output variables were not found by the controller.");
                 return false;
             }
+            Console.WriteLine($"Received output setup confirmation. Recipe ID: {package[1]}. Data types: {dataTypesStr}");
             return true;
+        }
+
+        public static byte ParseInputSetupResponse(byte[] package)
+        {
+            if (package[0] != (byte)'I')
+                throw new Exception("Error: Did not receive expected input setup confirmation.");
+
+            string result = Encoding.UTF8.GetString(package, 1, package.Length - 1);
+            if (result.Contains("NOT_FOUND"))
+                throw new Exception("Error: One or more input variables were not found by the controller.");
+
+            // The recipe ID is the second byte of the payload
+            return package[1];
+        }
+
+        public static string ParseTextMessage(byte[] package)
+        {
+            if (package.Length < 2) return "Unknown message.";
+            return Encoding.UTF8.GetString(package, 1, package.Length - 1);
         }
 
         public static Dictionary<string, double[]> ParseDataPackage(byte[] package, string[] variableNames)
         {
-            if (package[0] != (byte)'U')
-            {
-                Console.WriteLine("Received unexpected package type while waiting for data.");
-                return null;
-            }
-
             var result = new Dictionary<string, double[]>();
-            int offset = 2; // Start after type and recipe_id
+            int offset = 2; // Start after type 'U' and recipe_id
 
             foreach (var name in variableNames)
             {
-                // This parser is now more generic
                 if (name == "actual_TCP_pose" || name == "target_TCP_pose" || name == "actual_q")
                 {
+                    if (offset + 48 > package.Length) { Console.WriteLine("Error: Data package is smaller than expected for vector data."); return null; }
                     var values = new double[6];
                     for (int i = 0; i < 6; i++)
                     {
-                        if (offset + 8 > package.Length)
-                        {
-                            Console.WriteLine("Error: Data package is smaller than expected.");
-                            return null;
-                        }
                         byte[] doubleBytes = new byte[8];
                         Array.Copy(package, offset, doubleBytes, 0, 8);
                         if (BitConverter.IsLittleEndian) Array.Reverse(doubleBytes);
@@ -400,5 +411,4 @@ namespace UniversalRobotWpf
             return result;
         }
     }
-    #endregion
 }
