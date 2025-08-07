@@ -73,8 +73,8 @@ namespace UniversalRobotWpf
         {
             if (!_isConnected || _client == null) return;
             var standardStates = new[] { DigitalOut0, DigitalOut1, DigitalOut2, DigitalOut3, DigitalOut4, DigitalOut5, DigitalOut6, DigitalOut7 };
-            var toolStates = new[] { ConfigOut0, ConfigOut1, ConfigOut2, ConfigOut3, ConfigOut4, ConfigOut5, ConfigOut6, ConfigOut7 };
-            await _client.SendAllDigitalOutputStatesAsync(standardStates, toolStates);
+            var configStates = new[] { ConfigOut0, ConfigOut1, ConfigOut2, ConfigOut3, ConfigOut4, ConfigOut5, ConfigOut6, ConfigOut7 };
+            await _client.SendAllDigitalOutputStatesAsync(standardStates, configStates);
         }
 
         private async void ConnectToRobot()
@@ -184,6 +184,7 @@ namespace UniversalRobotWpf
             Application.Current.Dispatcher.Invoke(() => { LogMessages += $"[{DateTime.Now:HH:mm:ss}] {message}\n"; });
         }
     }
+    #region URRClient 
     public class URRClient
     {
         private readonly string _robotIp;
@@ -286,54 +287,45 @@ namespace UniversalRobotWpf
             Console.WriteLine($"Stored Combined Digital Output Recipe ID: {_digitalOutRecipeId}");
         }
 
-        public async Task SendAllDigitalOutputStatesAsync(bool[] standardStates, bool[] toolStates)
+        public async Task SendAllDigitalOutputStatesAsync(bool[] standardStates, bool[] configStates)
         {
             if (_digitalOutRecipeId == 0) return; // Recipe not set up yet
 
-            byte standardMask = 0, standardValue = 0, toolMask = 0, toolValue = 0;
+            byte standardMask = 0, standardValue = 0, configMask = 0, configValue = 0;
             for (int i = 0; i < 8; i++)
             {
                 standardMask |= (byte)(1 << i);
                 if (standardStates[i]) standardValue |= (byte)(1 << i);
-                toolMask |= (byte)(1 << i);
-                if (toolStates[i]) toolValue |= (byte)(1 << i);
+                configMask |= (byte)(1 << i);
+                if (configStates[i]) configValue |= (byte)(1 << i);
             }
 
-            byte[] package = new byte[8];
+            byte[] package = new byte[8];  // The package is 8 bytes: Size(2), Type(1), RecipeID(1), Mask1(1), Val1(1), Mask2(1), Val2(1)
+            ushort size = (ushort)package.Length;
             byte[] sizeBytes = BitConverter.GetBytes((ushort)package.Length);
-            if (BitConverter.IsLittleEndian) Array.Reverse(sizeBytes);
-            sizeBytes.CopyTo(package, 0);
-            package[2] = (byte)RtdEPackageType.RTDE_DATA_PACKAGE;
-            package[3] = _digitalOutRecipeId;
-            package[4] = standardMask;
-            package[5] = standardValue;
-            package[6] = toolMask;
-            package[7] = toolValue; // This was an error in my previous code, should be 7 bytes total. Correcting.
-                                    // The package is 7 bytes: Size(2), Type(1), RecipeID(1), Mask1(1), Val1(1), Mask2(1), Val2(1)
-                                    // Ah, wait. The recipe is 4 bytes long.
-                                    // Recipe: std_mask (u8), std_val (u8), tool_mask (u8), tool_val (u8)
-                                    // Package: Size(2), Type(1), RecipeID(1), Payload(4) = 8 bytes. My mistake. Let me fix.
-
-            // Correct package size is 8 bytes.
-            package = new byte[8];
-            sizeBytes = BitConverter.GetBytes((ushort)package.Length);
             if (BitConverter.IsLittleEndian) Array.Reverse(sizeBytes);
             sizeBytes.CopyTo(package, 0); // Size
             package[2] = (byte)RtdEPackageType.RTDE_DATA_PACKAGE; // Type 'U'
             package[3] = _digitalOutRecipeId; // Recipe ID
             package[4] = standardMask;
             package[5] = standardValue;
-            package[6] = toolMask;
-            package[7] = toolValue;
+            package[6] = configMask;
+            package[7] = configValue;
 
             await _stream.WriteAsync(package, 0, package.Length);
         }
 
         public async Task SendStartAsync()
         {
-            byte[] package = new byte[3] { 0, 3, (byte)RtdEPackageType.RTDE_CONTROL_PACKAGE_START };
-            await _stream.WriteAsync(package, 0, package.Length);
-            Console.WriteLine("Sent start command.");
+            ushort size = 3; // Size of the package: 2 bytes for size, 1 byte for type
+            byte[] sizeBytes = BitConverter.GetBytes(size);
+            if (BitConverter.IsLittleEndian) Array.Reverse(sizeBytes);
+            using (var ms = new MemoryStream())
+            {
+                ms.Write(sizeBytes, 0, 2); // Write size
+                ms.WriteByte((byte)RtdEPackageType.RTDE_CONTROL_PACKAGE_START); // Write package type
+                await _stream.WriteAsync(ms.ToArray(), 0, (int)ms.Length);
+            }
         }
 
         public async Task<byte[]> ReceivePackageAsync()
@@ -348,6 +340,8 @@ namespace UniversalRobotWpf
             return payloadBuffer;
         }
     }
+    #endregion
+    #region RTDE Data Parser
     public static class RTDEDataParser
     {
         public static bool ParseOutputSetupResponse(byte[] package)
@@ -411,4 +405,5 @@ namespace UniversalRobotWpf
             return result;
         }
     }
+    #endregion
 }
