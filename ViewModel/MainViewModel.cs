@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Security.RightsManagement;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,13 +17,19 @@ namespace UniversalRobotWpf
     public class MainViewModel : BaseViewModel
     {
         // --- Private fields for state ---
-        private URRClient _client;
+        private URRClient _client; // For RTDE data exchange
+        private URRClient _client1; // For URScript commands
         private CancellationTokenSource _cancellationTokenSource;
         private bool _isConnected = false;
 
         // --- Properties for UI Binding (Connection Info) ---
         private string _robotIp = "192.168.56.101";
+        private int _robotPort1 = 30004; // RTDE port
+        private int _robotPort2 = 29999; // Sending commands
+        private string _robotMode = "Unknown";
+
         public string RobotIp { get => _robotIp; set => SetProperty(ref _robotIp, value); }
+        public string RobotMode { get => _robotMode; set => SetProperty(ref _robotMode, value); }
 
         private string _connectionStatus = "Disconnected";
         public string ConnectionStatus { get => _connectionStatus; set { SetProperty(ref _connectionStatus, value); IsConnected = (value == "Connected"); } }
@@ -41,11 +48,18 @@ namespace UniversalRobotWpf
         // --- Commands ---
         public ICommand ConnectCommand { get; }
         public ICommand DisconnectCommand { get; }
+        public ICommand PlayCommand { get; }
+        public ICommand PauseCommand { get; }
+        public ICommand StopCommand { get; }
+
 
         public MainViewModel()
         {
             ConnectCommand = new RelayCommand(ConnectToRobot, () => !IsConnected);
             DisconnectCommand = new RelayCommand(DisconnectFromRobot, () => IsConnected);
+            PlayCommand = new RelayCommand(() => SendCommand("play"));
+            PauseCommand = new RelayCommand(() => SendCommand("pause"));
+            StopCommand = new RelayCommand(() => SendCommand("stop"));
         }
 
         #region Digital Output Properties
@@ -80,12 +94,16 @@ namespace UniversalRobotWpf
         private async void ConnectToRobot()
         {
             _cancellationTokenSource = new CancellationTokenSource();
-            _client = new URRClient(RobotIp);
+            _client = new URRClient(RobotIp, _robotPort1); // For RTDE data exchange
+            _client1 = new URRClient(RobotIp, _robotPort2); // For URScript commands
 
             try
             {
                 ConnectionStatus = "Connecting...";
+
                 await _client.ConnectAsync();
+                await _client1.ConnectAsync();
+
 
                 if (!await _client.NegotiateProtocolVersionAsync()) throw new Exception("Failed to negotiate protocol version.");
 
@@ -124,6 +142,21 @@ namespace UniversalRobotWpf
             // The loop will handle calling _client.Disconnect()
         }
 
+        private void SendCommand(string command)
+        {
+            if (_client1 == null || !_isConnected) return;
+            try
+            {
+                _client1.SendCommandAsync(command);
+                AddLogMessage($"Sent command: {command}");
+                RobotMode = _client1.SendCommandAsync("robotmode");
+            }
+            catch (Exception ex)
+            {
+                AddLogMessage($"Failed to send command '{command}': {ex.Message}");
+            }
+        }
+
         private async void DataExchangeLoop(string[] variables, CancellationToken token)
         {
             var lastHeartbeat = DateTime.MinValue;
@@ -139,8 +172,9 @@ namespace UniversalRobotWpf
                         await UpdateAllDigitalOuts();
                         lastHeartbeat = DateTime.UtcNow;
                     }
-
                     var dataPackage = await _client.ReceivePackageAsync();
+                    RobotMode = _client1.SendCommandAsync("robotmode");
+
                     if (dataPackage == null) { AddLogMessage("Connection lost."); break; }
 
                     switch (dataPackage[0])
@@ -188,7 +222,7 @@ namespace UniversalRobotWpf
     public class URRClient
     {
         private readonly string _robotIp;
-        private readonly int _robotPort = 30004;
+        private readonly int _robotPort;
         private TcpClient _tcpClient;
         private NetworkStream _stream;
         private byte _digitalOutRecipeId; // A single ID for our combined input recipe
@@ -201,10 +235,14 @@ namespace UniversalRobotWpf
             RTDE_CONTROL_PACKAGE_START = 83, RTDE_CONTROL_PACKAGE_PAUSE = 80
         }
 
-        public URRClient(string ip) { _robotIp = ip; }
+        public URRClient(string ip, int port) 
+        {
+            this._robotIp = ip;
+            this._robotPort = port;
+        }
 
         public async Task ConnectAsync()
-        {
+        {   
             _tcpClient = new TcpClient();
             await _tcpClient.ConnectAsync(_robotIp, _robotPort);
             _stream = _tcpClient.GetStream();
@@ -338,6 +376,16 @@ namespace UniversalRobotWpf
             byte[] payloadBuffer = new byte[packageSize - 2];
             await _stream.ReadAsync(payloadBuffer, 0, payloadBuffer.Length);
             return payloadBuffer;
+        }
+        public string SendCommandAsync(string command) // port:29999 function
+        {
+            byte[] commandBytes = Encoding.UTF8.GetBytes(command);
+            _stream.WriteAsync(commandBytes, 0, commandBytes.Length);
+            byte[] responseBuffer = new byte[1024]; // Assume max response size
+            _stream.ReadAsync(responseBuffer, 0, responseBuffer.Length);
+            string response = Encoding.UTF8.GetString(responseBuffer);
+            return response;
+
         }
     }
     #endregion
