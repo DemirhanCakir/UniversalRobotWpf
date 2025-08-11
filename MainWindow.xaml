@@ -46,15 +46,24 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <Button Content="Play" Command="{Binding PlayCommand}" Grid.Row="0" Grid.Column="0" Width="40"  Margin="5"/>
                 <Button Content="Pause" Command="{Binding PauseCommand}" Grid.Row="0" Grid.Column="1" Width="40" Margin="5"/>
                 <Button Content="Stop" Command="{Binding StopCommand}" Grid.Row="0" Grid.Column="2" Width="40" Margin="5"/>
                 <Label Content="Mode:" Grid.Row="0" Grid.Column="3" VerticalAlignment="Center"/>
-                <TextBox Text="{Binding RobotMode}" Grid.Row="0" Grid.Column="4" Margin="5,0"/>
+                <TextBox Text="{Binding RobotMode}" Grid.Row="0" Grid.Column="4" Margin="5,0" TextChanged="TextBox_TextChanged"/>
+                <Label Content="State:" Grid.Row="0" Grid.Column="5" VerticalAlignment="Center"/>
+                <TextBox Text="{Binding ProgramState}" Grid.Row="0" Grid.Column="6" Margin="5,0" TextChanged="TextBox_TextChanged"/>
+                <Button Content="Power ON" Command="{Binding PowerOnCommand}" Grid.Row="1" Grid.Column="0" Width="60" Margin="5"/>
+                <Button Content="Power OFF" Command="{Binding PowerOffCommand}" Grid.Row="1" Grid.Column="1" Width="60" Margin="5"/>
+                <Button Content="Breake Release" Command="{Binding BreakeReleaseCommand}" Grid.Row="1" Grid.Column="2" Width="85" Margin="5"/>
+                <Button Content="Restart Safely" Command="{Binding RestartSafelyCommand}" Grid.Row="1" Grid.Column="3" Width="85" Margin="5"/>
             </Grid>
         </GroupBox>
             <!-- Real-time Data Section -->

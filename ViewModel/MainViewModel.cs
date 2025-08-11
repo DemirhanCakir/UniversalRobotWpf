@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Runtime.Remoting.Messaging;
 using System.Security.RightsManagement;
 using System.Text;
 using System.Threading;
@@ -12,13 +13,14 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 
+
 namespace UniversalRobotWpf
 {
     public class MainViewModel : BaseViewModel
     {
         // --- Private fields for state ---
         private URRClient _client; // For RTDE data exchange
-        private URRClient _client1; // For URScript commands
+        private DashboardClient _client1; // Foe Dashboard commands
         private CancellationTokenSource _cancellationTokenSource;
         private bool _isConnected = false;
 
@@ -27,14 +29,34 @@ namespace UniversalRobotWpf
         private int _robotPort1 = 30004; // RTDE port
         private int _robotPort2 = 29999; // Sending commands
         private string _robotMode = "Unknown";
+        private string _programState = "Unknown";
 
         public string RobotIp { get => _robotIp; set => SetProperty(ref _robotIp, value); }
         public string RobotMode { get => _robotMode; set => SetProperty(ref _robotMode, value); }
+        public string ProgramState { get => _programState; set => SetProperty(ref _programState, value); }
 
         private string _connectionStatus = "Disconnected";
         public string ConnectionStatus { get => _connectionStatus; set { SetProperty(ref _connectionStatus, value); IsConnected = (value == "Connected"); } }
 
-        public bool IsConnected { get => _isConnected; set { if (SetProperty(ref _isConnected, value)) { ((RelayCommand)ConnectCommand).RaiseCanExecuteChanged(); ((RelayCommand)DisconnectCommand).RaiseCanExecuteChanged(); } } }
+        public bool IsConnected 
+        { 
+            get => _isConnected; 
+            set 
+            { 
+                if (SetProperty(ref _isConnected, value)) 
+                { 
+                    ((RelayCommand)ConnectCommand).RaiseCanExecuteChanged();                                                                                                      
+                    ((RelayCommand)DisconnectCommand).RaiseCanExecuteChanged();                                                                                                        
+                    ((RelayCommand)PlayCommand).RaiseCanExecuteChanged();                                                                                                         
+                    ((RelayCommand)StopCommand).RaiseCanExecuteChanged();                                                              
+                    ((RelayCommand)PauseCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)PowerOnCommand).RaiseCanExecuteChanged();                                                                                                         
+                    ((RelayCommand)PowerOffCommand).RaiseCanExecuteChanged();                                                                                                         
+                    ((RelayCommand)BreakeReleaseCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)RestartSafelyCommand).RaiseCanExecuteChanged();
+                } 
+            } 
+        }
 
         private string _poseData = "No data";
         public string PoseData { get => _poseData; set => SetProperty(ref _poseData, value); }
@@ -51,15 +73,23 @@ namespace UniversalRobotWpf
         public ICommand PlayCommand { get; }
         public ICommand PauseCommand { get; }
         public ICommand StopCommand { get; }
+        public ICommand PowerOnCommand { get; }
 
+        public ICommand PowerOffCommand { get; }
+        public ICommand BreakeReleaseCommand { get; }
+        public ICommand RestartSafelyCommand { get; }
 
         public MainViewModel()
         {
             ConnectCommand = new RelayCommand(ConnectToRobot, () => !IsConnected);
             DisconnectCommand = new RelayCommand(DisconnectFromRobot, () => IsConnected);
-            PlayCommand = new RelayCommand(() => SendCommand("play"));
-            PauseCommand = new RelayCommand(() => SendCommand("pause"));
-            StopCommand = new RelayCommand(() => SendCommand("stop"));
+            PlayCommand = new RelayCommand(() => SendCommand("play"), () => IsConnected);
+            PauseCommand = new RelayCommand(() => SendCommand("pause"), () => IsConnected);
+            StopCommand = new RelayCommand(() => SendCommand("stop"), () => IsConnected);
+            PowerOnCommand = new RelayCommand(() => SendCommand("power on"), () => IsConnected);
+            PowerOffCommand = new RelayCommand(() => SendCommand("power off"), () => IsConnected);
+            BreakeReleaseCommand = new RelayCommand(() => SendCommand("brake release"), () => IsConnected);
+            RestartSafelyCommand = new RelayCommand(() => SendCommand("restart safely"), () => IsConnected);
         }
 
         #region Digital Output Properties
@@ -95,7 +125,7 @@ namespace UniversalRobotWpf
         {
             _cancellationTokenSource = new CancellationTokenSource();
             _client = new URRClient(RobotIp, _robotPort1); // For RTDE data exchange
-            _client1 = new URRClient(RobotIp, _robotPort2); // For URScript commands
+            _client1 = new DashboardClient(RobotIp, _robotPort2); // For URScript commands
 
             try
             {
@@ -127,6 +157,7 @@ namespace UniversalRobotWpf
 
                 // Start the loop that handles both receiving data and sending the I/O heartbeat
                 Task.Run(() => DataExchangeLoop(outputVars, _cancellationTokenSource.Token));
+
             }
             catch (Exception ex)
             {
@@ -138,24 +169,30 @@ namespace UniversalRobotWpf
 
         private void DisconnectFromRobot()
         {
+            AddLogMessage("Disconnected from the robot");
             _cancellationTokenSource?.Cancel();
+            _client.Disconnect();
+            _client1.Disconnect();
             // The loop will handle calling _client.Disconnect()
         }
 
-        private void SendCommand(string command)
+        private async void SendCommand(string command)
         {
             if (_client1 == null || !_isConnected) return;
             try
             {
-                _client1.SendCommandAsync(command);
+                await _client1.SendCommandAsync(command);
                 AddLogMessage($"Sent command: {command}");
-                RobotMode = _client1.SendCommandAsync("robotmode");
+                await Task.Delay(100);
+                //RobotMode = await _client1.SendCommandAsync("robotmode");
+                //ProgramState = await _client1.SendCommandAsync("programState");
             }
             catch (Exception ex)
             {
                 AddLogMessage($"Failed to send command '{command}': {ex.Message}");
             }
         }
+
 
         private async void DataExchangeLoop(string[] variables, CancellationToken token)
         {
@@ -170,10 +207,12 @@ namespace UniversalRobotWpf
                     if (DateTime.UtcNow - lastHeartbeat > heartbeatInterval)
                     {
                         await UpdateAllDigitalOuts();
+                        RobotMode = await _client1.SendCommandAsync("robotmode");
+                        ProgramState = await _client1.SendCommandAsync("programState");
                         lastHeartbeat = DateTime.UtcNow;
                     }
                     var dataPackage = await _client.ReceivePackageAsync();
-                    RobotMode = _client1.SendCommandAsync("robotmode");
+                    
 
                     if (dataPackage == null) { AddLogMessage("Connection lost."); break; }
 
@@ -377,14 +416,66 @@ namespace UniversalRobotWpf
             await _stream.ReadAsync(payloadBuffer, 0, payloadBuffer.Length);
             return payloadBuffer;
         }
-        public string SendCommandAsync(string command) // port:29999 function
+    }
+    #endregion
+    #region DashboardClient
+    public class DashboardClient
+    {
+        private readonly string _robotIp;
+        private readonly int _dashboardPort;
+        private TcpClient _tcpClient;
+        private NetworkStream _stream;
+        private StreamReader _reader;
+
+        public DashboardClient(string ip, int port)
         {
-            byte[] commandBytes = Encoding.UTF8.GetBytes(command);
-            _stream.WriteAsync(commandBytes, 0, commandBytes.Length);
-            byte[] responseBuffer = new byte[1024]; // Assume max response size
-            _stream.ReadAsync(responseBuffer, 0, responseBuffer.Length);
-            string response = Encoding.UTF8.GetString(responseBuffer);
-            return response;
+            _robotIp = ip;
+            _dashboardPort = port;
+        }
+
+        public bool IsConnected => _tcpClient?.Connected ?? false;
+
+        public async Task ConnectAsync()
+        {
+            if (IsConnected) return;
+
+            _tcpClient = new TcpClient();
+            var connectTask = _tcpClient.ConnectAsync(_robotIp, _dashboardPort);
+            if (await Task.WhenAny(connectTask, Task.Delay(3000)) != connectTask)
+            {
+                throw new TimeoutException("Failed to connect to the Dashboard Server.");
+            }
+
+            _stream = _tcpClient.GetStream();
+            _reader = new StreamReader(_stream, Encoding.UTF8);
+
+            await _reader.ReadLineAsync();
+
+
+        }
+
+        public void Disconnect()
+        {
+            _reader?.Dispose();
+            _stream?.Close();
+            _tcpClient?.Close();
+        }
+
+    
+        public async Task<string> SendCommandAsync(string command)
+        {
+     
+            if (!IsConnected || _reader == null)
+            {
+                throw new IOException("Not connected to the robot's Dashboard Server.");
+            }
+
+            byte[] buffer = Encoding.ASCII.GetBytes(command + "\n");
+            await _stream.WriteAsync(buffer, 0, buffer.Length);
+
+            // Yanıtı satır satır okumak için ReadLineAsync kullanın
+            var response = await _reader.ReadLineAsync();
+            return response?.Trim() ?? string.Empty;
 
         }
     }
