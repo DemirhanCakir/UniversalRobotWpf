@@ -64,6 +64,7 @@
                 <Button Content="Power OFF" Command="{Binding PowerOffCommand}" Grid.Row="1" Grid.Column="1" Width="60" Margin="5"/>
                 <Button Content="Breake Release" Command="{Binding BreakeReleaseCommand}" Grid.Row="1" Grid.Column="2" Width="85" Margin="5"/>
                 <Button Content="Restart Safely" Command="{Binding RestartSafelyCommand}" Grid.Row="1" Grid.Column="3" Width="85" Margin="5"/>
+                <Button Content="Test Register" Command="{Binding TestCommand}" Grid.Row="1" Grid.Column="4" Width="85" Margin="5"/>
             </Grid>
         </GroupBox>
             <!-- Real-time Data Section -->

@@ -1,12 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Net.Sockets;
-using System.Runtime.CompilerServices;
-using System.Runtime.Remoting.Messaging;
-using System.Security.RightsManagement;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,6 +19,8 @@ namespace UniversalRobotWpf
         private DashboardClient _client1; // Foe Dashboard commands
         private CancellationTokenSource _cancellationTokenSource;
         private bool _isConnected = false;
+
+        private readonly SemaphoreSlim _dashboardSemaphore = new SemaphoreSlim(1, 1); // To ensure thread safety for Dashboard commands
 
         // --- Properties for UI Binding (Connection Info) ---
         private string _robotIp = "192.168.56.101";
@@ -54,7 +52,8 @@ namespace UniversalRobotWpf
                     ((RelayCommand)PowerOffCommand).RaiseCanExecuteChanged();                                                                                                         
                     ((RelayCommand)BreakeReleaseCommand).RaiseCanExecuteChanged();
                     ((RelayCommand)RestartSafelyCommand).RaiseCanExecuteChanged();
-                } 
+                    ((RelayCommand)TestCommand).RaiseCanExecuteChanged();
+                }
             } 
         }
 
@@ -78,6 +77,7 @@ namespace UniversalRobotWpf
         public ICommand PowerOffCommand { get; }
         public ICommand BreakeReleaseCommand { get; }
         public ICommand RestartSafelyCommand { get; }
+        public ICommand TestCommand { get; }
 
         public MainViewModel()
         {
@@ -90,6 +90,7 @@ namespace UniversalRobotWpf
             PowerOffCommand = new RelayCommand(() => SendCommand("power off"), () => IsConnected);
             BreakeReleaseCommand = new RelayCommand(() => SendCommand("brake release"), () => IsConnected);
             RestartSafelyCommand = new RelayCommand(() => SendCommand("restart safely"), () => IsConnected);
+            TestCommand= new RelayCommand(TestingCommand, () => IsConnected);
         }
 
         #region Digital Output Properties
@@ -166,7 +167,32 @@ namespace UniversalRobotWpf
                 _client?.Disconnect();
             }
         }
+        private async void TestingCommand()
+        {
+            if (_client == null || !IsConnected) { AddLogMessage("Test aborted (not connected)."); return; }
 
+            AddLogMessage("Testing command started.");
+
+            // 1) Özel input reçetesini kur ve recipeId al
+            var recipeId = await _client.SetupInputRecipeAsync(new[] { "input_int_register_25" });
+
+            // 2) RTDE DATA PACKAGE: size(2) + type(1) + recipeId(1) + int32(4) = 8 byte
+            byte[] package = new byte[8];
+            ushort size = (ushort)package.Length;
+            byte[] sizeBytes = BitConverter.GetBytes(size);
+            if (BitConverter.IsLittleEndian) Array.Reverse(sizeBytes);
+            package[0] = sizeBytes[0];
+            package[1] = sizeBytes[1];
+            package[2] = (byte)'U';         // RTDE_DATA_PACKAGE
+            package[3] = recipeId;          // DOĞRU recipeId
+            int value = 12345;
+            byte[] intBytes = BitConverter.GetBytes(value);
+            if (BitConverter.IsLittleEndian) Array.Reverse(intBytes);
+            Buffer.BlockCopy(intBytes, 0, package, 4, 4);
+
+            await _client.SendInput(package);
+            AddLogMessage($"Test int gönderildi (value={value}, recipe={recipeId}).");
+        }
         private void DisconnectFromRobot()
         {
             AddLogMessage("Disconnected from the robot");
@@ -192,6 +218,7 @@ namespace UniversalRobotWpf
                 AddLogMessage($"Failed to send command '{command}': {ex.Message}");
             }
         }
+
 
 
         private async void DataExchangeLoop(string[] variables, CancellationToken token)
@@ -391,7 +418,12 @@ namespace UniversalRobotWpf
 
             await _stream.WriteAsync(package, 0, package.Length);
         }
+        public async Task SendInput(byte[] package)
+        {
+            await _stream.WriteAsync(package, 0, package.Length);
+            Console.WriteLine("Sent input package to the robot.");
 
+        }
         public async Task SendStartAsync()
         {
             ushort size = 3; // Size of the package: 2 bytes for size, 1 byte for type
