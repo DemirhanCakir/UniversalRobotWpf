@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
-using System.Windows.Markup;
+using System.Windows.Input;
 
 namespace UniversalRobotWpf
 {
@@ -9,56 +9,85 @@ namespace UniversalRobotWpf
     {
         private readonly MainViewModel _vm;
 
-        // İsterseniz dışarıdan VM enjekte edin
         public UR_interface(MainViewModel viewModel)
         {
             _vm = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         }
 
-        // İsterseniz parametresiz ctor ile kendi VM'inizi yaratın
         public UR_interface() : this(new MainViewModel())
         {
         }
 
-        // Dışarıya VM'i de isterseniz expose edebilirsiniz (UI binding için)
         public MainViewModel ViewModel => _vm;
 
-        // Bağlantı operasyonları
-        public void Connect()
-        {
-            // MainViewModel içinde async void ConnectToRobot() var.
-            // Direkt çağırıyoruz.
-            _vm.ConnectToRobot();
-        }
+        // Bağlantı operasyonları (isteğe bağlı doğrudan kullanım)
+        public void Connect() => _vm.ConnectToRobot();
+        public void Disconnect() => _vm.DisconnectFromRobot();
 
-        public void Disconnect()
-        {
-            _vm.DisconnectFromRobot();
-        }
+        // Dashboard komutları (isteğe bağlı doğrudan kullanım)
+        public void SendDashboardCommand(string command) => _vm.SendCommand(command);
 
-        // Dashboard komutları
-        public void SendDashboardCommand(string command)
-        {
-            _vm.SendCommand(command);
-        }
+        // Register işlemleri (metot forward)
+        public Task<string> SetRegCommand() => _vm.SetRegCommand();
+        public Task<string> GetRegCommand() => _vm.GetRegCommand();
 
-        // Register işlemleri
-        public Task<string> SetRegisterAsync(string regType, string regId, string regValue)
-        {
-            return _vm.SetRegCommand(regType, regId, regValue);
-        }
+        // Async alias (varsa dış kullanım için)
+        public Task<string> SetRegisterAsync(string regType, string regId, string regValue) => _vm.SetRegCommand(regType, regId, regValue);
+        public Task<string> GetRegisterAsync(string variable) => _vm.GetRegCommand(variable);
 
-        public Task<string> GetRegisterAsync(string variable)
-        {
-            return _vm.GetRegCommand(variable);
-        }
+        // XAML'de kullanılan komutlar (forward)
+        public ICommand ConnectCommand => _vm.ConnectCommand;
+        public ICommand DisconnectCommand => _vm.DisconnectCommand;
+        public ICommand PlayCommand => _vm.PlayCommand;
+        public ICommand PauseCommand => _vm.PauseCommand;
+        public ICommand StopCommand => _vm.StopCommand;
+        public ICommand PowerOnCommand => _vm.PowerOnCommand;
+        public ICommand PowerOffCommand => _vm.PowerOffCommand;
+        public ICommand BreakeReleaseCommand => _vm.BreakeReleaseCommand;
+        public ICommand SetRegisterCommand => _vm.SetRegisterCommand;
+        public ICommand GetRegisterCommand => _vm.GetRegisterCommand;
 
-        // Bazı durum/ayar alanlarını dışarı açmak isteyebilirsiniz
+        // XAML'de kullanılan property'ler (forward)
         public bool IsConnected { get => _vm.IsConnected; set => _vm.IsConnected = value; }
+
         public string RobotIp { get => _vm.RobotIp; set => _vm.RobotIp = value; }
+        public string ConnectionStatus { get => _vm.ConnectionStatus; set => _vm.ConnectionStatus = value; }
         public string RobotMode { get => _vm.RobotMode; set => _vm.RobotMode = value; }
-    
         public string ProgramState { get => _vm.ProgramState; set => _vm.ProgramState = value; }
 
+        public string PoseData { get => _vm.PoseData; set => _vm.PoseData = value; }
+        public string JointData { get => _vm.JointData; set => _vm.JointData = value; }
+        public string LogMessages { get => _vm.LogMessages; set => _vm.LogMessages = value; }
+
+        // Dijital çıkışlar (forward)
+        public bool DigitalOut0 { get => _vm.DigitalOut0; set => _vm.DigitalOut0 = value; }
+        public bool DigitalOut1 { get => _vm.DigitalOut1; set => _vm.DigitalOut1 = value; }
+        public bool DigitalOut2 { get => _vm.DigitalOut2; set => _vm.DigitalOut2 = value; }
+        public bool DigitalOut3 { get => _vm.DigitalOut3; set => _vm.DigitalOut3 = value; }
+        public bool DigitalOut4 { get => _vm.DigitalOut4; set => _vm.DigitalOut4 = value; }
+        public bool DigitalOut5 { get => _vm.DigitalOut5; set => _vm.DigitalOut5 = value; }
+        public bool DigitalOut6 { get => _vm.DigitalOut6; set => _vm.DigitalOut6 = value; }
+        public bool DigitalOut7 { get => _vm.DigitalOut7; set => _vm.DigitalOut7 = value; }
+
+        public bool ConfigOut0 { get => _vm.ConfigOut0; set => _vm.ConfigOut0 = value; }
+        public bool ConfigOut1 { get => _vm.ConfigOut1; set => _vm.ConfigOut1 = value; }
+        public bool ConfigOut2 { get => _vm.ConfigOut2; set => _vm.ConfigOut2 = value; }
+        public bool ConfigOut3 { get => _vm.ConfigOut3; set => _vm.ConfigOut3 = value; }
+        public bool ConfigOut4 { get => _vm.ConfigOut4; set => _vm.ConfigOut4 = value; }
+        public bool ConfigOut5 { get => _vm.ConfigOut5; set => _vm.ConfigOut5 = value; }
+        public bool ConfigOut6 { get => _vm.ConfigOut6; set => _vm.ConfigOut6 = value; }
+        public bool ConfigOut7 { get => _vm.ConfigOut7; set => _vm.ConfigOut7 = value; }
+
+        // MainViewModel'deki register alanları (forward)
+        public string RegType { get => _vm.RegType; set => _vm.RegType = value; }
+        public string RegId { get => _vm.RegId; set => _vm.RegId = value; }
+        public string RegValue { get => _vm.RegValue; set => _vm.RegValue = value; }
+        public string Variable { get => _vm.Variable; set => _vm.Variable = value; }
+
+        // XAML alias'ları (mevcut XAML isimleriyle birebir uyum için)
+        public string SetRegisterType { get => _vm.RegType; set => _vm.RegType = value; }
+        public string SetRegisterId { get => _vm.RegId; set => _vm.RegId = value; }
+        public string SetRegisterValue { get => _vm.RegValue; set => _vm.RegValue = value; }
+        public string GetRegisterId { get => _vm.Variable; set => _vm.Variable = value; }
     }
 }

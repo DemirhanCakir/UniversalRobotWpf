@@ -1,24 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Sockets;
-using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices.ComTypes;
-using System.Runtime.Remoting.Messaging;
-using System.Security.RightsManagement;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
-using System.Windows.Markup;
-using Microsoft.Win32;
-
-
 
 namespace UniversalRobotWpf
 {
@@ -39,10 +28,15 @@ namespace UniversalRobotWpf
         private string _robotMode = "Unknown";
         private string _programState = "Unknown";
         private readonly Dictionary<string, byte> _inputRecipeMap = new Dictionary<string, byte>();
-        public string variable;
-        public string regValue;
-        public string regType;
-        public string regId;
+        private string _variable;
+        private string _regValue;
+        private string _regType;
+        private string _regId; 
+
+        public string Variable { get => _variable; set => SetProperty(ref _variable, value); }
+        public string RegValue { get => _regValue; set => SetProperty(ref _regValue, value); }
+        public string RegType { get => _regType; set => SetProperty(ref _regType, value); }
+        public string RegId { get => _regId; set => SetProperty(ref _regId, value); }
         public string RobotIp { get => _robotIp; set => SetProperty(ref _robotIp, value); }
         public string RobotMode { get => _robotMode; set => SetProperty(ref _robotMode, value); }
         public string ProgramState { get => _programState; set => SetProperty(ref _programState, value); }
@@ -61,9 +55,6 @@ namespace UniversalRobotWpf
         public string LogMessages { get => _logMessages; set => SetProperty(ref _logMessages, value); }
         public string _registerTypeSet = "Unknown";
 
-
-        // Liste kaynağı (enum değerlerini UI’ya vermek için)
-
         public bool IsConnected
         {
             get => _isConnected;
@@ -79,7 +70,6 @@ namespace UniversalRobotWpf
                     ((RelayCommand)PowerOnCommand).RaiseCanExecuteChanged();
                     ((RelayCommand)PowerOffCommand).RaiseCanExecuteChanged();
                     ((RelayCommand)BreakeReleaseCommand).RaiseCanExecuteChanged();
-                    ((RelayCommand)RestartSafelyCommand).RaiseCanExecuteChanged();
                     ((RelayCommand)SetRegisterCommand).RaiseCanExecuteChanged();
                     ((RelayCommand)GetRegisterCommand).RaiseCanExecuteChanged();
                     
@@ -97,7 +87,6 @@ namespace UniversalRobotWpf
 
         public ICommand PowerOffCommand { get; }
         public ICommand BreakeReleaseCommand { get; }
-        public ICommand RestartSafelyCommand { get; }
         public ICommand SetRegisterCommand { get; }
         public ICommand GetRegisterCommand { get; }
 
@@ -113,9 +102,8 @@ namespace UniversalRobotWpf
             PowerOnCommand = new RelayCommand(() => SendCommand("power on"), () => IsConnected);
             PowerOffCommand = new RelayCommand(() => SendCommand("power off"), () => IsConnected);
             BreakeReleaseCommand = new RelayCommand(() => SendCommand("brake release"), () => IsConnected);
-            RestartSafelyCommand = new RelayCommand(() => SendCommand("restart safely"), () => IsConnected);
-            SetRegisterCommand = new RelayCommand(() => { _ = SetRegCommand(regType, regId, regValue); }, () => IsConnected);
-            GetRegisterCommand = new RelayCommand(() => { _ = GetRegCommand(variable); }, () => IsConnected);
+            SetRegisterCommand = new RelayCommand(() => { _ = SetRegCommand(_regType, _regId, _regValue); }, () => IsConnected);
+            GetRegisterCommand = new RelayCommand(() => { _ = GetRegCommand(_variable); }, () => IsConnected);
         }
 
         #region Digital Output Properties
@@ -145,10 +133,28 @@ namespace UniversalRobotWpf
         {
             try
             {
-                this.regType = regType;
-                this.regId = regId;
-                this.regValue = regValue;
+                this._regType = regType;
+                this._regId = regId;
+                this._regValue = regValue;
                 string command = $"sec setVar():\n write_output_{regType}_register({regId}, {regValue})\n x= read_output_integer_register(24)\n textmsg(\"register:\", x)\nend\n";
+                Console.WriteLine(command);
+
+                string response = await _client2.SendCommandAsync(command);
+                return response;
+
+            }
+            catch (Exception ex)
+            {
+                AddLogMessage($"Error setting register: {ex.Message}");
+                return null;
+            }
+        }
+        public async Task<string> SetRegCommand()
+        {
+            try
+            {
+                
+                string command = $"sec setVar():\n write_output_{RegType}_register({RegId}, {RegValue})\n x= read_output_integer_register(24)\n textmsg(\"register:\", x)\nend\n";
                 Console.WriteLine(command);
 
                 string response = await _client2.SendCommandAsync(command);
@@ -167,13 +173,48 @@ namespace UniversalRobotWpf
             await _client1.ConnectAsync();
             string response = await _client1.SendCommandAsync($"getVariable {variable}");
             Console.WriteLine($"Received response: {response}");
+            AddLogMessage($"Get Register Response: {response}");
             return response;
         }
+        public async Task<string> GetRegCommand()
+        {
+            _client1 = new DashboardClient(RobotIp, _robotPort2);
+            await _client1.ConnectAsync();
+            string response = await _client1.SendCommandAsync($"getVariable {Variable}");
+            Console.WriteLine($"Received response: {response}");
+            AddLogMessage($"Get Register Response: {response}");
+            return response;
+        }
+
+        /// <summary>
+        /// Pushes the current states of all 16 digital outputs to the robot via RTDE.
+        /// Packs the 8 standard and 8 configurable outputs into mask/value pairs
+        /// matching RTDE inputs:
+        /// - standard_digital_output_mask, standard_digital_output
+        /// - configurable_digital_output_mask, configurable_digital_output
+        /// Note: Requires a valid RTDE connection and an input recipe set up earlier.
+        /// </summary>
         public async Task UpdateAllDigitalOuts()
         {
+            // Guard: do nothing if we're not connected or the RTDE client isn't ready.
             if (!_isConnected || _client == null) return;
-            var standardStates = new[] { DigitalOut0, DigitalOut1, DigitalOut2, DigitalOut3, DigitalOut4, DigitalOut5, DigitalOut6, DigitalOut7 };
-            var configStates = new[] { ConfigOut0, ConfigOut1, ConfigOut2, ConfigOut3, ConfigOut4, ConfigOut5, ConfigOut6, ConfigOut7 };
+
+            // Collect current UI-bound states for the 8 standard digital outputs (bits 0..7).
+            var standardStates = new[]
+            {
+                DigitalOut0, DigitalOut1, DigitalOut2, DigitalOut3,
+                DigitalOut4, DigitalOut5, DigitalOut6, DigitalOut7
+            };
+
+            // Collect current UI-bound states for the 8 configurable digital outputs (bits 0..7).
+            var configStates = new[]
+            {
+                ConfigOut0, ConfigOut1, ConfigOut2, ConfigOut3,
+                ConfigOut4, ConfigOut5, ConfigOut6, ConfigOut7
+            };
+
+            // Ask the RTDE client to pack these into a single 'U' data package
+            // (recipe id + std mask/value + cfg mask/value) and send to the controller.
             await _client.SendAllDigitalOutputStatesAsync(standardStates, configStates);
         }
         public async void ConnectToRobot()
@@ -196,9 +237,9 @@ namespace UniversalRobotWpf
 
                 // Setup outputs (for reading data FROM robot)
                 var outputVars = new[] { "actual_TCP_pose", "actual_q" };
-                await _client.SendOutputSetupAsync(outputVars); // ---------------
-                var setupResponse = await _client.ReceivePackageAsync();//-------------------
-                if (setupResponse == null || !RTDEDataParser.ParseOutputSetupResponse(setupResponse)) throw new Exception("Failed to setup RTDE output recipe.");//-------------------
+                await _client.SendOutputSetupAsync(outputVars); 
+                var setupResponse = await _client.ReceivePackageAsync();
+                if (setupResponse == null || !RTDEDataParser.ParseOutputSetupResponse(setupResponse)) throw new Exception("Failed to setup RTDE output recipe.");
 
                 // Setup ONE combined input recipe for all 16 outputs
                 var inputVars = new[]
@@ -206,14 +247,14 @@ namespace UniversalRobotWpf
                     "standard_digital_output_mask", "standard_digital_output",
                     "configurable_digital_output_mask", "configurable_digital_output"
                 };
-                await _client.SetupInputRecipeAsync(inputVars);//-------------------
+                await _client.SetupInputRecipeAsync(inputVars);
 
-                await _client.SendStartAsync();// -------------------
+                await _client.SendStartAsync();
                 ConnectionStatus = "Connected";
                 AddLogMessage("Connection successful. Starting data exchange...");
 
                 // Start the loop that handles both receiving data and sending the I/O heartbeat
-                _ = Task.Run(() => DataExchangeLoop(outputVars, _cancellationTokenSource.Token));// -------------------
+                _ = Task.Run(() => DataExchangeLoop(outputVars, _cancellationTokenSource.Token));
             }
             catch (Exception ex)
             {
@@ -239,8 +280,8 @@ namespace UniversalRobotWpf
                 await _client1.SendCommandAsync(command);
                 AddLogMessage($"Sent command: {command}");
                 await Task.Delay(100);
-                RobotMode = await _client1.SendCommandAsync("robotmode");// -------------------
-                ProgramState = await _client1.SendCommandAsync("programState"); // -------------------
+                RobotMode = await _client1.SendCommandAsync("robotmode");
+                ProgramState = await _client1.SendCommandAsync("programState"); 
             }
             catch (Exception ex)
             {
@@ -321,6 +362,10 @@ namespace UniversalRobotWpf
         private NetworkStream _stream;
         private byte _digitalOutRecipeId;
 
+        /// <summary>
+        /// RTDE package types (values are ASCII codes as defined in the RTDE guide).
+        /// 'V'=86, 'v'=118, 'M'=77, 'U'=85, 'O'=79, 'I'=73, 'S'=83, 'P'=80
+        /// </summary>
         private enum RtdEPackageType : byte
         {
             RTDE_REQUEST_PROTOCOL_VERSION = 86, RTDE_GET_URCONTROL_VERSION = 118,
@@ -329,20 +374,29 @@ namespace UniversalRobotWpf
             RTDE_CONTROL_PACKAGE_START = 83, RTDE_CONTROL_PACKAGE_PAUSE = 80
         }
 
-        public URRClient(string ip, int port) 
+        /// <summary>
+        /// Create an RTDE client for the specified IP/port (usually 30004).
+        /// </summary>
+        public URRClient(string ip, int port)
         {
             this._robotIp = ip;
             this._robotPort = port;
         }
 
+        /// <summary>
+        /// Open a TCP connection and get the network stream for RTDE.
+        /// </summary>
         public async Task ConnectAsync()
-        {   
+        {
             _tcpClient = new TcpClient();
             await _tcpClient.ConnectAsync(_robotIp, _robotPort);
             _stream = _tcpClient.GetStream();
             Console.WriteLine("Connected to RTDE interface.");
         }
 
+        /// <summary>
+        /// Close the RTDE network stream and socket.
+        /// </summary>
         public void Disconnect()
         {
             _stream?.Close();
@@ -350,9 +404,15 @@ namespace UniversalRobotWpf
             Console.WriteLine("Disconnected from RTDE interface.");
         }
 
+        /// <summary>
+        /// Ask the controller to use protocol version 2.
+        /// Returns true if the controller accepts (payload: ['V', accepted=1]).
+        /// </summary>
         public async Task<bool> NegotiateProtocolVersionAsync()
         {
             ushort protocolVersion = 2;
+
+            // Build header: size(2, big-endian) + type(1) + version(2, big-endian)
             byte[] sizeBytes = BitConverter.GetBytes((ushort)5);
             if (BitConverter.IsLittleEndian) Array.Reverse(sizeBytes);
             byte[] versionBytes = BitConverter.GetBytes(protocolVersion);
@@ -367,6 +427,7 @@ namespace UniversalRobotWpf
             Console.WriteLine("Sent protocol version request.");
 
             var response = await ReceivePackageAsync();
+            // Expect: [ 'V', accepted(1|0) ]
             if (response != null && response[0] == (byte)RtdEPackageType.RTDE_REQUEST_PROTOCOL_VERSION && response[1] == 1)
             {
                 Console.WriteLine("Protocol version 2 accepted by controller.");
@@ -376,12 +437,20 @@ namespace UniversalRobotWpf
             return false;
         }
 
+        /// <summary>
+        /// Configure a single output recipe with desired variables and frequency (1..125 Hz).
+        /// Per spec, payload is: type 'O' + frequency(double) + csv variable names.
+        /// </summary>
         public async Task SendOutputSetupAsync(string[] variables, double frequency = 125.0)
         {
             string payloadStr = string.Join(",", variables);
             byte[] payload = Encoding.UTF8.GetBytes(payloadStr);
+
+            // RTDE uses big-endian for numbers
             byte[] frequencyBytes = BitConverter.GetBytes(frequency);
             if (BitConverter.IsLittleEndian) Array.Reverse(frequencyBytes);
+
+            // size = 3(header) + 8(freq) + payload length
             ushort size = (ushort)(3 + 8 + payload.Length);
             byte[] sizeBytes = BitConverter.GetBytes(size);
             if (BitConverter.IsLittleEndian) Array.Reverse(sizeBytes);
@@ -397,10 +466,16 @@ namespace UniversalRobotWpf
             Console.WriteLine($"Sent output setup request for: {payloadStr}");
         }
 
+        /// <summary>
+        /// Configure a single input recipe for writing controller inputs (e.g., digital outputs mask/value).
+        /// Stores the returned recipe id for later use when sending 'U' data packages.
+        /// </summary>
         public async Task SetupInputRecipeAsync(string[] variables)
         {
             string payloadStr = string.Join(",", variables);
             byte[] payload = Encoding.UTF8.GetBytes(payloadStr);
+
+            // size = 3(header) + payload length
             ushort size = (ushort)(3 + payload.Length);
             byte[] sizeBytes = BitConverter.GetBytes(size);
             if (BitConverter.IsLittleEndian) Array.Reverse(sizeBytes);
@@ -414,61 +489,70 @@ namespace UniversalRobotWpf
             }
             Console.WriteLine($"Sent combined input setup request for: {payloadStr}");
 
+            // Expect: ['I', recipeId, "types..."]
             var response = await ReceivePackageAsync();
             _digitalOutRecipeId = RTDEDataParser.ParseInputSetupResponse(response);
             Console.WriteLine($"Stored Combined Digital Output Recipe ID: {_digitalOutRecipeId}");
         }
-        
-        
-        // Eski ReceivePackageAsync yerine kullanın.
-        // includeSizeField = true gönderirseniz 2 byte'lık (big-endian) uzunluk alanı da başta olacak.
+
+
+        /// <summary>
+        /// Receive a single RTDE package from the stream.
+        /// By default returns only the payload (without the 2-byte size). Set includeSizeField=true to get both.
+        /// Returns null if the stream closes before full read.
+        /// </summary>
         public async Task<byte[]> ReceivePackageAsync(bool includeSizeField = false)
         {
             if (_stream == null) return null;
 
-            // 1) İlk 2 byte: paket uzunluğu (big-endian, uzunluğun kendisi dahil)
+            // 1) Read 2-byte big-endian total size (includes these 2 bytes)
             var sizeBytesBE = new byte[2];
             int read = await ReadExactAsync(_stream, sizeBytesBE, 0, 2);
-            if (read != 2) return null; // Bağlantı kapanmış olabilir
+            if (read != 2) return null; // Stream might be closed
 
-            // Big-endian uzunluğu ushort'a çevir
             ushort totalSize = (ushort)((sizeBytesBE[0] << 8) | sizeBytesBE[1]);
-            if (totalSize < 2) return null; // Geçersiz
+            if (totalSize < 2) return null; // Invalid
 
             int payloadLen = totalSize - 2;
             var payload = new byte[payloadLen];
 
-            // 2) Geri kalan payload'ı tamamen oku
+            // 2) Read the remaining payload (type + body)
             read = await ReadExactAsync(_stream, payload, 0, payloadLen);
-            if (read != payloadLen) return null; // Erken kapanış
+            if (read != payloadLen) return null; // Early close
 
-            // Varsayılan davranış (eski kodla uyum): sadece payload döndür
             if (!includeSizeField)
                 return payload;
 
-            // Tüm paketi (uzunluk + payload) döndür
+            // Return full frame if requested
             var full = new byte[totalSize];
             Buffer.BlockCopy(sizeBytesBE, 0, full, 0, 2);
             Buffer.BlockCopy(payload, 0, full, 2, payloadLen);
             return full;
         }
 
-        // NetworkStream'den tam 'count' byte okuyana kadar döner (veya bağlantı kapanır).
+        /// <summary>
+        /// Read exactly 'count' bytes from the stream (unless the connection closes).
+        /// Returns the number of bytes actually read.
+        /// </summary>
         private static async Task<int> ReadExactAsync(NetworkStream stream, byte[] buffer, int offset, int count)
         {
             int total = 0;
             while (total < count)
             {
                 int n = await stream.ReadAsync(buffer, offset + total, count - total);
-                if (n == 0) break; // Bağlantı kapandı
+                if (n == 0) break; // Connection closed
                 total += n;
             }
             return total;
         }
-        
+
+        /// <summary>
+        /// Send a single RTDE_DATA_PACKAGE ('U') using the stored input recipe id to update
+        /// standard and configurable digital outputs (mask/value for 8 bits each).
+        /// </summary>
         public async Task SendAllDigitalOutputStatesAsync(bool[] standardStates, bool[] configStates)
         {
-            if (_digitalOutRecipeId == 0) return;
+            if (_digitalOutRecipeId == 0) return; // Input recipe not valid
 
             byte standardMask = 0, standardValue = 0, configMask = 0, configValue = 0;
             for (int i = 0; i < 8; i++)
@@ -479,6 +563,7 @@ namespace UniversalRobotWpf
                 if (configStates[i]) configValue |= (byte)(1 << i);
             }
 
+            // Frame: size_be(2) | 'U'(1) | recipe_id(1) | std_mask(1) | std_val(1) | cfg_mask(1) | cfg_val(1)
             byte[] package = new byte[8];
             byte[] sizeBytes = BitConverter.GetBytes((ushort)package.Length);
             if (BitConverter.IsLittleEndian) Array.Reverse(sizeBytes);
@@ -493,6 +578,10 @@ namespace UniversalRobotWpf
             await _stream.WriteAsync(package, 0, package.Length);
         }
 
+        /// <summary>
+        /// Utility: set up an output recipe for a single variable and return its recipe id and type string.
+        /// Useful for one-off reads of a specific output.
+        /// </summary>
         public async Task<(byte recipeId, string dataTypes)> SetupSingleOutputAsync(string variable, double frequency = 125.0)
         {
             byte[] payload = Encoding.UTF8.GetBytes(variable);
@@ -522,6 +611,9 @@ namespace UniversalRobotWpf
             return (recipeId, dataTypes);
         }
 
+        /// <summary>
+        /// Wait for the next RTDE_DATA_PACKAGE for the given recipe id, or time out.
+        /// </summary>
         public async Task<byte[]> ReceiveDataForRecipeAsync(byte recipeId, int timeoutMs = 1000)
         {
             var start = DateTime.UtcNow;
@@ -535,8 +627,12 @@ namespace UniversalRobotWpf
             throw new TimeoutException("İstenen recipe için veri paketi gelmedi.");
         }
 
+        /// <summary>
+        /// Send RTDE start command ('S') so the controller begins streaming outputs.
+        /// </summary>
         public async Task SendStartAsync()
         {
+            // Minimal header-only control packet
             ushort size = 3;
             byte[] sizeBytes = BitConverter.GetBytes(size);
             if (BitConverter.IsLittleEndian) Array.Reverse(sizeBytes);
@@ -547,14 +643,20 @@ namespace UniversalRobotWpf
                 await _stream.WriteAsync(ms.ToArray(), 0, (int)ms.Length);
             }
         }
+
+        /// <summary>
+        /// Send RTDE pause command ('P') to stop streaming outputs.
+        /// </summary>
         public async Task SendPauseAsync()
         {
+            // Minimal header-only control packet
             ushort size = 3;
             var sizeBytes = BitConverter.GetBytes(size);
             if (BitConverter.IsLittleEndian) Array.Reverse(sizeBytes);
             using (var ms = new MemoryStream())
             {
                 ms.Write(sizeBytes, 0, 2);
+                // NOTE: literal 84 == 'T'. For clarity, prefer (byte)RtdEPackageType.RTDE_CONTROL_PACKAGE_PAUSE ('P'=80).
                 ms.WriteByte((byte)84 /*'P' yerine enum kullanıyorsanız (byte)RtdEPackageType.RTDE_CONTROL_PACKAGE_PAUSE*/ );
                 await _stream.WriteAsync(ms.ToArray(), 0, (int)ms.Length);
             }
@@ -616,8 +718,19 @@ namespace UniversalRobotWpf
     }
     #endregion
     #region RTDE Data Parser
+    /// <summary>
+    /// Helpers to parse RTDE packages according to the "Real-Time Data Exchange (RTDE) Guide".
+    /// Notes:
+    /// - All multi-byte numbers from the controller are big-endian.
+    /// - This class contains only minimal parsing for what the app uses (pose/joints, basic setup acks).
+    /// </summary>
     public static class RTDEDataParser
     {
+        /// <summary>
+        /// Parses an Output Setup response ('O').
+        /// Expects: ['O', output_recipe_id, variable_types_string...]
+        /// Returns true when no variable type is "NOT_FOUND".
+        /// </summary>
         public static bool ParseOutputSetupResponse(byte[] package)
         {
             if (package[0] != (byte)'O')
@@ -625,21 +738,31 @@ namespace UniversalRobotWpf
                 Console.WriteLine("Error: Did not receive expected output setup confirmation.");
                 return false;
             }
+
+            // Byte[1] is the output recipe id, the rest is a CSV of variable types.
             string dataTypesStr = Encoding.UTF8.GetString(package, 2, package.Length - 2);
             if (dataTypesStr.Contains("NOT_FOUND"))
             {
                 Console.WriteLine("Error: One or more output variables were not found by the controller.");
                 return false;
             }
+
             Console.WriteLine($"Received output setup confirmation. Recipe ID: {package[1]}. Data types: {dataTypesStr}");
             return true;
         }
 
+        /// <summary>
+        /// Parses an Input Setup response ('I').
+        /// Expects: ['I', input_recipe_id, variable_types_string...]
+        /// Throws if any variable is "NOT_FOUND".
+        /// Tip: The RTDE spec also allows "IN_USE" for inputs; handle it if needed.
+        /// </summary>
         public static byte ParseInputSetupResponse(byte[] package)
         {
             if (package[0] != (byte)'I')
                 throw new Exception("Error: Did not receive expected input setup confirmation.");
 
+            // Byte[1] is the input recipe id, the rest is a CSV of variable types.
             string result = Encoding.UTF8.GetString(package, 1, package.Length - 1);
             if (result.Contains("NOT_FOUND"))
                 throw new Exception("Error: One or more input variables were not found by the controller.");
@@ -648,34 +771,67 @@ namespace UniversalRobotWpf
             return package[1];
         }
 
+        /// <summary>
+        /// Parses a text message ('M') payload to a readable string.
+        /// Note: Protocol v2 has structured fields; here we flatten bytes[1..] for compact logging.
+        /// </summary>
         public static string ParseTextMessage(byte[] package)
         {
             if (package.Length < 2) return "Unknown message.";
             return Encoding.UTF8.GetString(package, 1, package.Length - 1);
         }
 
+        /// <summary>
+        /// Parses a data package ('U') for selected VECTOR6D variables (pose/joints).
+        /// Assumptions:
+        /// - The incoming payload order matches variableNames (recipe order).
+        /// - Only variables "actual_TCP_pose", "target_TCP_pose", and "actual_q" are parsed.
+        /// - Each VECTOR6D = 6 x DOUBLE (big-endian).
+        /// Returns a map: variableName -> double[6].
+        /// </summary>
         public static Dictionary<string, double[]> ParseDataPackage(byte[] package, string[] variableNames)
         {
             var result = new Dictionary<string, double[]>();
-            int offset = 2; // Start after type 'U' and recipe_id
+
+            // Skip package type ('U') and recipe_id.
+            int offset = 2;
 
             foreach (var name in variableNames)
             {
+                // Only parse variables we know are VECTOR6D
                 if (name == "actual_TCP_pose" || name == "target_TCP_pose" || name == "actual_q")
                 {
-                    if (offset + 48 > package.Length) { Console.WriteLine("Error: Data package is smaller than expected for vector data."); return null; }
+                    // 6 doubles x 8 bytes = 48 bytes
+                    if (offset + 48 > package.Length)
+                    {
+                        Console.WriteLine("Error: Data package is smaller than expected for vector data.");
+                        return null;
+                    }
+
                     var values = new double[6];
                     for (int i = 0; i < 6; i++)
                     {
                         byte[] doubleBytes = new byte[8];
                         Array.Copy(package, offset, doubleBytes, 0, 8);
+
+                        // Convert big-endian -> little-endian if needed
                         if (BitConverter.IsLittleEndian) Array.Reverse(doubleBytes);
+
                         values[i] = BitConverter.ToDouble(doubleBytes, 0);
                         offset += 8;
                     }
+
                     result[name] = values;
                 }
+                else
+                {
+                    // If your recipe includes other variables, you must advance 'offset'
+                    // according to their data type sizes to stay aligned.
+                    // This implementation ignores unknown names and leaves offset unchanged,
+                    // assuming the recipe contains only the known VECTOR6D variables.
+                }
             }
+
             return result;
         }
     }
@@ -686,7 +842,6 @@ namespace UniversalRobotWpf
         private readonly int _secondaryPort;
         private TcpClient _client;
         private NetworkStream _stream;
-        private StreamReader _reader;
 
         public SecondaryClient(string ip, int port)
         {
