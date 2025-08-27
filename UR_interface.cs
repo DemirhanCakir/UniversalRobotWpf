@@ -4,7 +4,7 @@ using System.Windows.Input;
 
 namespace UniversalRobotWpf
 {
-    // Basit facade/sarmalayıcı
+    // Simple facade/wrapper
     public class UR_interface
     {
         private readonly MainViewModel _vm;
@@ -20,22 +20,22 @@ namespace UniversalRobotWpf
 
         public MainViewModel ViewModel => _vm;
 
-        // Bağlantı operasyonları (isteğe bağlı doğrudan kullanım)
+        // Connection operations (optional direct usage)
         public void Connect() => _vm.ConnectToRobot();
         public void Disconnect() => _vm.DisconnectFromRobot();
 
-        // Dashboard komutları (isteğe bağlı doğrudan kullanım)
+        // Dashboard commands (optional direct usage)
         public void SendDashboardCommand(string command) => _vm.SendCommand(command);
 
-        // Register işlemleri (metot forward)
+        // Register operations (method forward)
         public Task<string> SetRegCommand() => _vm.SetRegCommand();
         public Task<string> GetRegCommand() => _vm.GetRegCommand();
 
-        // Async alias (varsa dış kullanım için)
+        // Async aliases (for external usage if any)
         public Task<string> SetRegisterAsync(string regType, string regId, string regValue) => _vm.SetRegCommand(regType, regId, regValue);
         public Task<string> GetRegisterAsync(string variable) => _vm.GetRegCommand(variable);
 
-        // XAML'de kullanılan komutlar (forward)
+        // Commands used in XAML (forward)
         public ICommand ConnectCommand => _vm.ConnectCommand;
         public ICommand DisconnectCommand => _vm.DisconnectCommand;
         public ICommand PlayCommand => _vm.PlayCommand;
@@ -47,7 +47,7 @@ namespace UniversalRobotWpf
         public ICommand SetRegisterCommand => _vm.SetRegisterCommand;
         public ICommand GetRegisterCommand => _vm.GetRegisterCommand;
 
-        // XAML'de kullanılan property'ler (forward)
+        // Properties used in XAML (forward)
         public bool IsConnected { get => _vm.IsConnected; set => _vm.IsConnected = value; }
 
         public string RobotIp { get => _vm.RobotIp; set => _vm.RobotIp = value; }
@@ -59,7 +59,7 @@ namespace UniversalRobotWpf
         public string JointData { get => _vm.JointData; set => _vm.JointData = value; }
         public string LogMessages { get => _vm.LogMessages; set => _vm.LogMessages = value; }
 
-        // Dijital çıkışlar (forward)
+        // Digital outputs (forward)
         public bool DigitalOut0 { get => _vm.DigitalOut0; set => _vm.DigitalOut0 = value; }
         public bool DigitalOut1 { get => _vm.DigitalOut1; set => _vm.DigitalOut1 = value; }
         public bool DigitalOut2 { get => _vm.DigitalOut2; set => _vm.DigitalOut2 = value; }
@@ -78,13 +78,13 @@ namespace UniversalRobotWpf
         public bool ConfigOut6 { get => _vm.ConfigOut6; set => _vm.ConfigOut6 = value; }
         public bool ConfigOut7 { get => _vm.ConfigOut7; set => _vm.ConfigOut7 = value; }
 
-        // MainViewModel'deki register alanları (forward)
+        // Register fields in MainViewModel (forward)
         public string RegType { get => _vm.RegType; set => _vm.RegType = value; }
         public string RegId { get => _vm.RegId; set => _vm.RegId = value; }
         public string RegValue { get => _vm.RegValue; set => _vm.RegValue = value; }
         public string Variable { get => _vm.Variable; set => _vm.Variable = value; }
 
-        // XAML alias'ları (mevcut XAML isimleriyle birebir uyum için)
+        // XAML aliases (to match existing XAML names exactly)
         public string SetRegisterType { get => _vm.RegType; set => _vm.RegType = value; }
         public string SetRegisterId { get => _vm.RegId; set => _vm.RegId = value; }
         public string SetRegisterValue { get => _vm.RegValue; set => _vm.RegValue = value; }
